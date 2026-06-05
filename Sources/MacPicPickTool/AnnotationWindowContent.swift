@@ -24,7 +24,8 @@ struct AnnotationWindowContent: View {
             ToolbarView(
                 store: store,
                 onSave: saveAnnotatedImage,
-                onScreenshot: { WindowManager.shared.startScreenshot() }
+                onScreenshot: { WindowManager.shared.startScreenshot() },
+                onCopy: copyToClipboard
             )
             Divider()
             Group {
@@ -59,15 +60,24 @@ struct AnnotationWindowContent: View {
     private var keyboardShortcuts: some View {
         Group {
             Button("") { store.currentTool = .rectangle }.keyboardShortcut("r", modifiers: [])
+            Button("") { store.currentTool = .arrow }.keyboardShortcut("a", modifiers: [])
             Button("") { store.currentTool = .text }.keyboardShortcut("t", modifiers: [])
             Button("") { store.currentTool = .doodle }.keyboardShortcut("p", modifiers: [])
+            Button("") { store.currentTool = .highlight }.keyboardShortcut("h", modifiers: [])
             Button("") { store.currentTool = .mosaic }.keyboardShortcut("m", modifiers: [])
             Button("") { store.currentTool = .blur }.keyboardShortcut("b", modifiers: [])
             Button("") { store.currentTool = .numberLabel }.keyboardShortcut("n", modifiers: [])
             Button("") { store.undo() }.keyboardShortcut("z", modifiers: .command)
             Button("") { saveAnnotatedImage() }.keyboardShortcut("s", modifiers: .command)
+            Button("") { copyToClipboard() }.keyboardShortcut("c", modifiers: .command)
         }
         .hidden()
+    }
+
+    // MARK: - Copy to Clipboard
+
+    private func copyToClipboard() {
+        store.copyToClipboard(canvasSize: canvasSize)
     }
 
     // MARK: - Export

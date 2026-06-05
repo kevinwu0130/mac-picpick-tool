@@ -10,13 +10,19 @@ class AnnotationStore: ObservableObject {
     @Published var mosaics: [MosaicAnnotation] = []
     @Published var blurs: [BlurAnnotation] = []
     @Published var numberLabels: [NumberLabelAnnotation] = []
+    @Published var arrows: [ArrowAnnotation] = []
+    @Published var highlights: [HighlightAnnotation] = []
+
     @Published var currentTool: AnnotationTool = .rectangle
+    @Published var currentColor: Color = .red
+    @Published var currentLineWidth: CGFloat = 2
 
     private var history: [AnnotationKind] = []
 
     var hasAnnotations: Bool {
         !rectangles.isEmpty || !textAnnotations.isEmpty || !doodles.isEmpty
             || !mosaics.isEmpty || !blurs.isEmpty || !numberLabels.isEmpty
+            || !arrows.isEmpty || !highlights.isEmpty
     }
 
     var nextLabelNumber: Int { numberLabels.count + 1 }
@@ -36,19 +42,29 @@ class AnnotationStore: ObservableObject {
     // MARK: - Adding Annotations
 
     func addRectangle(_ rect: CGRect) {
-        rectangles.append(RectAnnotation(rect: rect))
+        rectangles.append(RectAnnotation(rect: rect, color: currentColor, lineWidth: currentLineWidth))
         history.append(.rectangle)
     }
 
     func addText(_ text: String, at position: CGPoint) {
-        textAnnotations.append(TextAnnotation(position: position, text: text))
+        textAnnotations.append(TextAnnotation(position: position, text: text, color: currentColor))
         history.append(.text)
     }
 
     func addDoodle(points: [CGPoint]) {
         guard points.count > 1 else { return }
-        doodles.append(DoodleAnnotation(points: points))
+        doodles.append(DoodleAnnotation(points: points, color: currentColor, lineWidth: currentLineWidth))
         history.append(.doodle)
+    }
+
+    func addArrow(start: CGPoint, end: CGPoint) {
+        arrows.append(ArrowAnnotation(start: start, end: end, color: currentColor, lineWidth: currentLineWidth))
+        history.append(.arrow)
+    }
+
+    func addHighlight(rect: CGRect) {
+        highlights.append(HighlightAnnotation(rect: rect, color: currentColor))
+        history.append(.highlight)
     }
 
     func addMosaic(rect: CGRect, canvasSize: CGSize) {
@@ -68,7 +84,7 @@ class AnnotationStore: ObservableObject {
     }
 
     func addNumberLabel(at position: CGPoint) {
-        numberLabels.append(NumberLabelAnnotation(position: position, number: nextLabelNumber))
+        numberLabels.append(NumberLabelAnnotation(position: position, number: nextLabelNumber, color: currentColor))
         history.append(.numberLabel)
     }
 
@@ -83,6 +99,8 @@ class AnnotationStore: ObservableObject {
         case .mosaic:      mosaics.removeLast()
         case .blur:        blurs.removeLast()
         case .numberLabel: numberLabels.removeLast()
+        case .arrow:       arrows.removeLast()
+        case .highlight:   highlights.removeLast()
         }
     }
 
@@ -93,13 +111,22 @@ class AnnotationStore: ObservableObject {
         mosaics = []
         blurs = []
         numberLabels = []
+        arrows = []
+        highlights = []
         history = []
+    }
+
+    // MARK: - Copy to Clipboard
+
+    func copyToClipboard(canvasSize: CGSize) {
+        guard let image = exportAnnotatedImage(canvasSize: canvasSize) else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.writeObjects([image])
     }
 
     // MARK: - Mosaic Tile Computation
 
-    // Crops the image region, applies CIPixellate, returns an NSImage sized for display.
-    // canvasRect is in SwiftUI top-left origin coordinates; NSImage uses bottom-left origin.
     static func pixelateTile(
         from image: NSImage,
         canvasRect: CGRect,
@@ -112,7 +139,6 @@ class AnnotationStore: ObservableObject {
         let scaleX = image.size.width / canvasSize.width
         let scaleY = image.size.height / canvasSize.height
 
-        // Source rect in NSImage coordinates (y=0 at bottom)
         let srcRect = NSRect(
             x: canvasRect.minX * scaleX,
             y: image.size.height - canvasRect.maxY * scaleY,
@@ -121,7 +147,6 @@ class AnnotationStore: ObservableObject {
         )
         guard srcRect.width > 0, srcRect.height > 0 else { return nil }
 
-        // Extract the region by drawing into a temporary NSImage
         let crop = NSImage(size: srcRect.size)
         crop.lockFocus()
         image.draw(
@@ -132,7 +157,6 @@ class AnnotationStore: ObservableObject {
         )
         crop.unlockFocus()
 
-        // Apply CIPixellate filter
         guard let cgImg = crop.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
         let ciImage = CIImage(cgImage: cgImg)
         let filter = CIFilter(name: "CIPixellate")!
@@ -142,14 +166,11 @@ class AnnotationStore: ObservableObject {
         let ciCtx = CIContext()
         guard let outCG = ciCtx.createCGImage(output, from: output.extent) else { return nil }
 
-        // Size the returned NSImage to the canvas rect so it draws 1:1 in the overlay
         return NSImage(cgImage: outCG, size: canvasRect.size)
     }
 
     // MARK: - Gaussian Blur Tile Computation
 
-    // Applies CIGaussianBlur to the selected region. Uses clampedToExtent so edge
-    // pixels repeat into the blur kernel rather than bleeding to transparent black.
     static func gaussianBlurTile(
         from image: NSImage,
         canvasRect: CGRect,
@@ -165,7 +186,6 @@ class AnnotationStore: ObservableObject {
         let scaleX = imgW / canvasSize.width
         let scaleY = imgH / canvasSize.height
 
-        // CIImage uses bottom-left origin (same as CGImage)
         let srcRect = CGRect(
             x: canvasRect.minX * scaleX,
             y: imgH - canvasRect.maxY * scaleY,
@@ -175,7 +195,6 @@ class AnnotationStore: ObservableObject {
         guard srcRect.width > 0, srcRect.height > 0 else { return nil }
 
         let ciImage = CIImage(cgImage: cgImg)
-        // clampedToExtent repeats edge pixels into the blur kernel, avoiding black borders
         let clamped = ciImage.clampedToExtent()
         let filter = CIFilter(name: "CIGaussianBlur")!
         filter.setValue(clamped, forKey: kCIInputImageKey)
@@ -204,7 +223,21 @@ class AnnotationStore: ObservableObject {
         let scaleY = imgSize.height / canvasSize.height
         let lineScale = max(scaleX, scaleY)
 
-        // 1. Mosaics — re-pixelate at full image resolution for crisp export
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return result }
+
+        // 1. Highlights — drawn first so they appear beneath all other annotations
+        for h in highlights {
+            let destRect = CGRect(
+                x: h.rect.minX * scaleX,
+                y: imgSize.height - h.rect.maxY * scaleY,
+                width: h.rect.width * scaleX,
+                height: h.rect.height * scaleY
+            )
+            ctx.setFillColor(NSColor(h.color).withAlphaComponent(0.4).cgColor)
+            ctx.fill(destRect)
+        }
+
+        // 2. Mosaics — re-pixelate at full image resolution for crisp export
         for mosaic in mosaics {
             let destRect = CGRect(
                 x: mosaic.rect.minX * scaleX,
@@ -222,7 +255,7 @@ class AnnotationStore: ObservableObject {
             }
         }
 
-        // 2. Blurs — re-blur at full image resolution
+        // 3. Blurs — re-blur at full image resolution
         for blur in blurs {
             let destRect = CGRect(
                 x: blur.rect.minX * scaleX,
@@ -240,12 +273,10 @@ class AnnotationStore: ObservableObject {
             }
         }
 
-        guard let ctx = NSGraphicsContext.current?.cgContext else { return result }
-
-        // 3. Rectangles
-        ctx.setStrokeColor(NSColor.red.cgColor)
-        ctx.setLineWidth(2.0 * lineScale)
+        // 4. Rectangles
         for rect in rectangles {
+            ctx.setStrokeColor(NSColor(rect.color).cgColor)
+            ctx.setLineWidth(rect.lineWidth * lineScale)
             let r = CGRect(
                 x: rect.rect.minX * scaleX,
                 y: imgSize.height - rect.rect.maxY * scaleY,
@@ -255,13 +286,40 @@ class AnnotationStore: ObservableObject {
             ctx.stroke(r)
         }
 
-        // 4. Doodles
-        ctx.setStrokeColor(NSColor.red.cgColor)
+        // 5. Arrows
         ctx.setLineCap(.round)
         ctx.setLineJoin(.round)
-        ctx.setLineWidth(3.0 * lineScale)
+        for arrow in arrows {
+            let s = CGPoint(x: arrow.start.x * scaleX, y: imgSize.height - arrow.start.y * scaleY)
+            let e = CGPoint(x: arrow.end.x * scaleX,   y: imgSize.height - arrow.end.y * scaleY)
+            guard hypot(e.x - s.x, e.y - s.y) > 1 else { continue }
+
+            ctx.setStrokeColor(NSColor(arrow.color).cgColor)
+            ctx.setLineWidth(arrow.lineWidth * lineScale)
+
+            ctx.beginPath()
+            ctx.move(to: s)
+            ctx.addLine(to: e)
+            ctx.strokePath()
+
+            let angle = atan2(e.y - s.y, e.x - s.x)
+            let headLen = (arrow.lineWidth * 4 + 10) * lineScale
+            let headAngle = CGFloat.pi / 6
+            ctx.beginPath()
+            ctx.move(to: CGPoint(x: e.x - headLen * cos(angle - headAngle),
+                                 y: e.y - headLen * sin(angle - headAngle)))
+            ctx.addLine(to: e)
+            ctx.move(to: CGPoint(x: e.x - headLen * cos(angle + headAngle),
+                                 y: e.y - headLen * sin(angle + headAngle)))
+            ctx.addLine(to: e)
+            ctx.strokePath()
+        }
+
+        // 6. Doodles
         for doodle in doodles {
             guard doodle.points.count > 1 else { continue }
+            ctx.setStrokeColor(NSColor(doodle.color).cgColor)
+            ctx.setLineWidth(doodle.lineWidth * lineScale)
             ctx.beginPath()
             let first = doodle.points[0]
             ctx.move(to: CGPoint(x: first.x * scaleX, y: imgSize.height - first.y * scaleY))
@@ -271,12 +329,12 @@ class AnnotationStore: ObservableObject {
             ctx.strokePath()
         }
 
-        // 5. Text annotations
+        // 7. Text annotations
         for annotation in textAnnotations {
             let fontSize = 16.0 * lineScale
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: NSFont.boldSystemFont(ofSize: fontSize),
-                .foregroundColor: NSColor.red,
+                .foregroundColor: NSColor(annotation.color),
                 .backgroundColor: NSColor.black.withAlphaComponent(0.55)
             ]
             let pt = CGPoint(
@@ -286,7 +344,7 @@ class AnnotationStore: ObservableObject {
             (annotation.text as NSString).draw(at: pt, withAttributes: attrs)
         }
 
-        // 6. Number labels — red circle with white number
+        // 8. Number labels — circle with number
         for label in numberLabels {
             let center = CGPoint(
                 x: label.position.x * scaleX,
@@ -299,7 +357,7 @@ class AnnotationStore: ObservableObject {
                 width: diameter,
                 height: diameter
             )
-            ctx.setFillColor(NSColor.red.cgColor)
+            ctx.setFillColor(NSColor(label.color).cgColor)
             ctx.fillEllipse(in: circleRect)
 
             let fontSize = 14.0 * lineScale
