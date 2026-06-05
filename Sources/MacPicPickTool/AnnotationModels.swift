@@ -3,6 +3,16 @@ import CoreGraphics
 import AppKit
 import SwiftUI
 
+// MARK: - CGPoint helper
+
+extension CGPoint {
+    func offset(_ dx: CGFloat, _ dy: CGFloat) -> CGPoint {
+        CGPoint(x: x + dx, y: y + dy)
+    }
+}
+
+// MARK: - Annotation Structs
+
 struct RectAnnotation: Identifiable {
     let id = UUID()
     let rect: CGRect
@@ -15,6 +25,7 @@ struct TextAnnotation: Identifiable {
     let position: CGPoint
     let text: String
     let color: Color
+    let fontSize: CGFloat
 }
 
 struct DoodleAnnotation: Identifiable {
@@ -28,6 +39,21 @@ struct ArrowAnnotation: Identifiable {
     let id = UUID()
     let start: CGPoint
     let end: CGPoint
+    let color: Color
+    let lineWidth: CGFloat
+}
+
+struct LineAnnotation: Identifiable {
+    let id = UUID()
+    let start: CGPoint
+    let end: CGPoint
+    let color: Color
+    let lineWidth: CGFloat
+}
+
+struct EllipseAnnotation: Identifiable {
+    let id = UUID()
+    let rect: CGRect
     let color: Color
     let lineWidth: CGFloat
 }
@@ -57,13 +83,18 @@ struct HighlightAnnotation: Identifiable {
     let color: Color
 }
 
+// MARK: - Enums
+
 enum AnnotationKind {
-    case rectangle, text, doodle, mosaic, blur, numberLabel, arrow, highlight
+    case rectangle, text, doodle, mosaic, blur, numberLabel, arrow, highlight, line, ellipse
 }
 
 enum AnnotationTool: CaseIterable, Hashable {
+    case select
     case rectangle
     case arrow
+    case line
+    case ellipse
     case text
     case doodle
     case highlight
@@ -73,8 +104,11 @@ enum AnnotationTool: CaseIterable, Hashable {
 
     var label: String {
         switch self {
+        case .select:      return "選取"
         case .rectangle:   return "矩形框"
         case .arrow:       return "箭頭"
+        case .line:        return "直線"
+        case .ellipse:     return "橢圓"
         case .text:        return "文字"
         case .doodle:      return "塗鴉"
         case .highlight:   return "螢光筆"
@@ -86,8 +120,11 @@ enum AnnotationTool: CaseIterable, Hashable {
 
     var systemImage: String {
         switch self {
+        case .select:      return "cursorarrow"
         case .rectangle:   return "rectangle"
         case .arrow:       return "arrow.up.right"
+        case .line:        return "line.diagonal"
+        case .ellipse:     return "oval"
         case .text:        return "text.cursor"
         case .doodle:      return "scribble"
         case .highlight:   return "highlighter"
@@ -99,8 +136,11 @@ enum AnnotationTool: CaseIterable, Hashable {
 
     var shortcutKey: String {
         switch self {
+        case .select:      return "V"
         case .rectangle:   return "R"
         case .arrow:       return "A"
+        case .line:        return "L"
+        case .ellipse:     return "E"
         case .text:        return "T"
         case .doodle:      return "P"
         case .highlight:   return "H"

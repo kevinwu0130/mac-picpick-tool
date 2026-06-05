@@ -98,6 +98,10 @@ final class WindowManager {
         if let data = rep.representation(using: .png, properties: [:]) {
             try? data.write(to: url)
             NotificationCenter.default.post(name: .newScreenshotSaved, object: nil)
+            if UserDefaults.standard.bool(forKey: "autoCopyAfterScreenshot") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.writeObjects([image])
+            }
         }
     }
 

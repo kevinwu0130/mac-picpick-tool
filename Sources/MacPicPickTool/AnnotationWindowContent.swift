@@ -63,8 +63,11 @@ struct AnnotationWindowContent: View {
 
     private var keyboardShortcuts: some View {
         Group {
+            Button("") { store.currentTool = .select }.keyboardShortcut("v", modifiers: [])
             Button("") { store.currentTool = .rectangle }.keyboardShortcut("r", modifiers: [])
             Button("") { store.currentTool = .arrow }.keyboardShortcut("a", modifiers: [])
+            Button("") { store.currentTool = .line }.keyboardShortcut("l", modifiers: [])
+            Button("") { store.currentTool = .ellipse }.keyboardShortcut("e", modifiers: [])
             Button("") { store.currentTool = .text }.keyboardShortcut("t", modifiers: [])
             Button("") { store.currentTool = .doodle }.keyboardShortcut("p", modifiers: [])
             Button("") { store.currentTool = .highlight }.keyboardShortcut("h", modifiers: [])
@@ -74,8 +77,16 @@ struct AnnotationWindowContent: View {
             Button("") { store.undo() }.keyboardShortcut("z", modifiers: .command)
             Button("") { saveAnnotatedImage() }.keyboardShortcut("s", modifiers: .command)
             Button("") { copyToClipboard() }.keyboardShortcut("c", modifiers: .command)
+            Button("") { pasteFromClipboard() }.keyboardShortcut("v", modifiers: .command)
         }
         .hidden()
+    }
+
+    // MARK: - Paste from Clipboard
+
+    private func pasteFromClipboard() {
+        guard let image = NSImage(pasteboard: .general) else { return }
+        store.loadImage(nsImage: image)
     }
 
     // MARK: - Copy to Clipboard
