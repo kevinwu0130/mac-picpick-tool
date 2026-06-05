@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct ToolbarView: View {
     @ObservedObject var store: AnnotationStore
+    @Binding var zoomScale: CGFloat
     let onSave: () -> Void
     let onScreenshot: () -> Void
     let onCopy: () -> Void
@@ -47,6 +48,39 @@ struct ToolbarView: View {
                 .help("文字大小（文字工具）")
                 .opacity(store.currentTool == .text ? 1.0 : 0.35)
                 .disabled(store.currentTool != .text)
+
+                // Fill toggle (rect / ellipse only)
+                let supportsFill = store.currentTool == .rectangle || store.currentTool == .ellipse
+                Button {
+                    store.isFilled.toggle()
+                } label: {
+                    Image(systemName: store.isFilled ? "square.fill" : "square")
+                        .font(.system(size: 13))
+                }
+                .help("填色切換（矩形/橢圓）")
+                .opacity(supportsFill ? 1.0 : 0.35)
+                .disabled(!supportsFill)
+
+                Divider().frame(height: 20)
+
+                // Zoom controls
+                HStack(spacing: 4) {
+                    Button { zoomScale = max(0.25, zoomScale - 0.25) } label: {
+                        Image(systemName: "minus.magnifyingglass").font(.system(size: 11))
+                    }
+                    .help("縮小 (⌘-)")
+                    .buttonStyle(.plain)
+                    Text("\(Int(zoomScale * 100))%")
+                        .font(.caption2).foregroundColor(.secondary)
+                        .frame(width: 36, alignment: .center)
+                        .onTapGesture { zoomScale = 1.0 }
+                        .help("點擊重設為 100% (⌘0)")
+                    Button { zoomScale = min(4.0, zoomScale + 0.25) } label: {
+                        Image(systemName: "plus.magnifyingglass").font(.system(size: 11))
+                    }
+                    .help("放大 (⌘+)")
+                    .buttonStyle(.plain)
+                }
 
                 Divider().frame(height: 20)
 

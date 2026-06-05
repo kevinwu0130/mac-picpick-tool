@@ -6,8 +6,11 @@ struct AnnotationCanvas: View {
     @Binding var showTextInput: Bool
     @Binding var textInputPosition: CGPoint
     @Binding var canvasSize: CGSize
+    @Binding var selectedKind: AnnotationKind?
+    @Binding var selectedIndex: Int
+    @Binding var zoomScale: CGFloat
 
-    // Drag state for shape tools (rect/arrow/line/ellipse/mosaic/blur/highlight)
+    // Drag state for shape tools
     @State private var dragStart: CGPoint = .zero
     @State private var dragCurrent: CGPoint = .zero
     @State private var isDrawingShape = false
@@ -15,14 +18,15 @@ struct AnnotationCanvas: View {
     // Doodle stroke
     @State private var currentStroke: [CGPoint] = []
 
-    // Select/move state
-    @State private var moveKind: AnnotationKind? = nil
-    @State private var moveIndex: Int = -1
+    // Move state (during active drag)
     @State private var isMoving = false
     @State private var moveStart: CGPoint = .zero
     @State private var moveCurrent: CGPoint = .zero
 
     @State private var isHovering = false
+
+    // Base canvas size captured before zoom (annotation coordinate space)
+    @State private var baseCanvasSize: CGSize = .zero
 
     private var moveDelta: CGSize {
         CGSize(width: moveCurrent.x - moveStart.x, height: moveCurrent.y - moveStart.y)
@@ -31,10 +35,23 @@ struct AnnotationCanvas: View {
     var body: some View {
         ScrollView([.horizontal, .vertical]) {
             if let image = store.selectedImage {
+                let hasBase = baseCanvasSize.width > 0
                 Image(nsImage: image)
                     .resizable()
                     .scaledToFit()
+                    // Fix layout size to baseCanvasSize when zoomed to prevent coordinate drift
+                    .frame(
+                        width: hasBase ? baseCanvasSize.width : nil,
+                        height: hasBase ? baseCanvasSize.height : nil
+                    )
                     .overlay(canvasOverlay)
+                    .scaleEffect(zoomScale, anchor: .topLeading)
+                    // Give the ScrollView a content size that matches visual zoom
+                    .frame(
+                        minWidth: hasBase ? baseCanvasSize.width * zoomScale : nil,
+                        minHeight: hasBase ? baseCanvasSize.height * zoomScale : nil,
+                        alignment: .topLeading
+                    )
             }
         }
         .background(Color(nsColor: .controlBackgroundColor))
@@ -56,8 +73,15 @@ struct AnnotationCanvas: View {
             .onChange(of: store.currentTool) { _ in
                 if isHovering { updateCursor(active: true) }
             }
-            .onAppear { canvasSize = geo.size }
-            .onChange(of: geo.size) { newSize in canvasSize = newSize }
+            .onAppear {
+                canvasSize = geo.size
+                if baseCanvasSize == .zero { baseCanvasSize = geo.size }
+            }
+            .onChange(of: geo.size) { newSize in
+                // Only update base when not zoomed (window resize at 1×)
+                if zoomScale == 1.0 { baseCanvasSize = newSize }
+                canvasSize = newSize
+            }
         }
     }
 
@@ -66,7 +90,7 @@ struct AnnotationCanvas: View {
     private func drawAll(in context: GraphicsContext) {
         // 1. Highlights
         for (i, h) in store.highlights.enumerated() {
-            let rect = isMoving && moveKind == .highlight && moveIndex == i
+            let rect = isMoving && selectedKind == .highlight && selectedIndex == i
                 ? h.rect.offsetBy(dx: moveDelta.width, dy: moveDelta.height) : h.rect
             context.fill(Path(rect), with: .color(h.color.opacity(0.4)))
         }
@@ -83,21 +107,27 @@ struct AnnotationCanvas: View {
 
         // 4. Ellipses
         for (i, ellipse) in store.ellipses.enumerated() {
-            let rect = isMoving && moveKind == .ellipse && moveIndex == i
+            let rect = isMoving && selectedKind == .ellipse && selectedIndex == i
                 ? ellipse.rect.offsetBy(dx: moveDelta.width, dy: moveDelta.height) : ellipse.rect
+            if ellipse.filled {
+                context.fill(Path(ellipseIn: rect), with: .color(ellipse.color.opacity(0.25)))
+            }
             context.stroke(Path(ellipseIn: rect), with: .color(ellipse.color), lineWidth: ellipse.lineWidth)
         }
 
         // 5. Rectangles
         for (i, rect) in store.rectangles.enumerated() {
-            let r = isMoving && moveKind == .rectangle && moveIndex == i
+            let r = isMoving && selectedKind == .rectangle && selectedIndex == i
                 ? rect.rect.offsetBy(dx: moveDelta.width, dy: moveDelta.height) : rect.rect
+            if rect.filled {
+                context.fill(Path(r), with: .color(rect.color.opacity(0.25)))
+            }
             context.stroke(Path(r), with: .color(rect.color), lineWidth: rect.lineWidth)
         }
 
         // 6. Lines
         for (i, line) in store.lines.enumerated() {
-            let d = isMoving && moveKind == .line && moveIndex == i ? moveDelta : .zero
+            let d = isMoving && selectedKind == .line && selectedIndex == i ? moveDelta : .zero
             var path = Path()
             path.move(to: line.start.offset(d.width, d.height))
             path.addLine(to: line.end.offset(d.width, d.height))
@@ -107,7 +137,7 @@ struct AnnotationCanvas: View {
 
         // 7. Arrows
         for (i, arrow) in store.arrows.enumerated() {
-            let d = isMoving && moveKind == .arrow && moveIndex == i ? moveDelta : .zero
+            let d = isMoving && selectedKind == .arrow && selectedIndex == i ? moveDelta : .zero
             drawArrow(in: context,
                       from: arrow.start.offset(d.width, d.height),
                       to: arrow.end.offset(d.width, d.height),
@@ -117,7 +147,7 @@ struct AnnotationCanvas: View {
         // 8. Doodles
         for (i, doodle) in store.doodles.enumerated() {
             guard doodle.points.count > 1 else { continue }
-            let d = isMoving && moveKind == .doodle && moveIndex == i ? moveDelta : .zero
+            let d = isMoving && selectedKind == .doodle && selectedIndex == i ? moveDelta : .zero
             var path = Path()
             path.move(to: doodle.points[0].offset(d.width, d.height))
             for pt in doodle.points.dropFirst() { path.addLine(to: pt.offset(d.width, d.height)) }
@@ -127,7 +157,7 @@ struct AnnotationCanvas: View {
 
         // 9. Text
         for (i, annotation) in store.textAnnotations.enumerated() {
-            let d = isMoving && moveKind == .text && moveIndex == i ? moveDelta : .zero
+            let d = isMoving && selectedKind == .text && selectedIndex == i ? moveDelta : .zero
             context.draw(
                 Text(annotation.text)
                     .font(.system(size: annotation.fontSize, weight: .bold))
@@ -138,7 +168,7 @@ struct AnnotationCanvas: View {
 
         // 10. Number labels
         for (i, label) in store.numberLabels.enumerated() {
-            let d = isMoving && moveKind == .numberLabel && moveIndex == i ? moveDelta : .zero
+            let d = isMoving && selectedKind == .numberLabel && selectedIndex == i ? moveDelta : .zero
             let pos = label.position.offset(d.width, d.height)
             let diameter: CGFloat = 26
             let circleRect = CGRect(x: pos.x - diameter / 2, y: pos.y - diameter / 2, width: diameter, height: diameter)
@@ -154,11 +184,13 @@ struct AnnotationCanvas: View {
             switch store.currentTool {
             case .rectangle:
                 let preview = normalizedRect(from: dragStart, to: dragCurrent)
-                context.fill(Path(preview), with: .color(store.currentColor.opacity(0.1)))
+                if store.isFilled { context.fill(Path(preview), with: .color(store.currentColor.opacity(0.25))) }
+                else { context.fill(Path(preview), with: .color(store.currentColor.opacity(0.08))) }
                 context.stroke(Path(preview), with: .color(store.currentColor), lineWidth: store.currentLineWidth)
             case .ellipse:
                 let preview = normalizedRect(from: dragStart, to: dragCurrent)
-                context.fill(Path(ellipseIn: preview), with: .color(store.currentColor.opacity(0.1)))
+                if store.isFilled { context.fill(Path(ellipseIn: preview), with: .color(store.currentColor.opacity(0.25))) }
+                else { context.fill(Path(ellipseIn: preview), with: .color(store.currentColor.opacity(0.08))) }
                 context.stroke(Path(ellipseIn: preview), with: .color(store.currentColor), lineWidth: store.currentLineWidth)
             case .line:
                 var path = Path(); path.move(to: dragStart); path.addLine(to: dragCurrent)
@@ -191,10 +223,11 @@ struct AnnotationCanvas: View {
                            style: StrokeStyle(lineWidth: store.currentLineWidth, lineCap: .round, lineJoin: .round))
         }
 
-        // Move selection highlight
-        if isMoving, let kind = moveKind, moveIndex >= 0 {
-            if let selRect = selectionBounds(kind: kind, index: moveIndex) {
-                let moved = selRect.offsetBy(dx: moveDelta.width, dy: moveDelta.height).insetBy(dx: -4, dy: -4)
+        // Persistent selection highlight (shown at rest and during move)
+        if let kind = selectedKind, selectedIndex >= 0 {
+            let delta = isMoving ? moveDelta : .zero
+            if let selRect = selectionBounds(kind: kind, index: selectedIndex) {
+                let moved = selRect.offsetBy(dx: delta.width, dy: delta.height).insetBy(dx: -4, dy: -4)
                 context.stroke(Path(moved), with: .color(.white.opacity(0.8)),
                                style: StrokeStyle(lineWidth: 1.5, dash: [5, 3]))
                 context.stroke(Path(moved), with: .color(.accentColor.opacity(0.8)),
@@ -229,11 +262,13 @@ struct AnnotationCanvas: View {
                 let d = hypot(value.translation.width, value.translation.height)
                 switch store.currentTool {
                 case .select:
-                    if !isMoving, d > 4, let (kind, index) = hitTest(at: value.startLocation) {
-                        moveKind = kind; moveIndex = index
-                        moveStart = value.startLocation; moveCurrent = value.location
-                        isMoving = true
-                    } else if isMoving {
+                    if !isMoving {
+                        if d > 4, let (kind, index) = hitTest(at: value.startLocation) {
+                            selectedKind = kind; selectedIndex = index
+                            moveStart = value.startLocation; moveCurrent = value.location
+                            isMoving = true
+                        }
+                    } else {
                         moveCurrent = value.location
                     }
                 case .rectangle, .mosaic, .blur, .arrow, .line, .ellipse, .highlight:
@@ -249,10 +284,16 @@ struct AnnotationCanvas: View {
                 let d = hypot(value.translation.width, value.translation.height)
                 switch store.currentTool {
                 case .select:
-                    if isMoving, let kind = moveKind, d > 3 {
-                        store.moveAnnotation(kind: kind, index: moveIndex, by: moveDelta)
+                    if isMoving, let kind = selectedKind, d > 3 {
+                        store.moveAnnotation(kind: kind, index: selectedIndex, by: moveDelta)
                     }
-                    isMoving = false; moveKind = nil; moveIndex = -1
+                    isMoving = false
+                    // Click on empty space → deselect
+                    if d < 5, hitTest(at: value.startLocation) == nil {
+                        selectedKind = nil; selectedIndex = -1
+                    } else if d < 5, let hit = hitTest(at: value.startLocation) {
+                        selectedKind = hit.0; selectedIndex = hit.1
+                    }
 
                 case .rectangle:
                     if d > 5 { store.addRectangle(normalizedRect(from: value.startLocation, to: value.location)) }

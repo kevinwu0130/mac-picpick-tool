@@ -2,14 +2,15 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
-/// The view hierarchy for a single annotation window.
-/// Each window gets its own independent AnnotationStore via @StateObject.
 struct AnnotationWindowContent: View {
     @StateObject private var store: AnnotationStore
     @State private var showTextInput = false
     @State private var textInputPosition: CGPoint = .zero
     @State private var textInput = ""
     @State private var canvasSize: CGSize = .zero
+    @State private var selectedKind: AnnotationKind? = nil
+    @State private var selectedIndex: Int = -1
+    @State private var zoomScale: CGFloat = 1.0
 
     init(initialImage: NSImage? = nil) {
         let s = AnnotationStore()
@@ -23,6 +24,7 @@ struct AnnotationWindowContent: View {
         VStack(spacing: 0) {
             ToolbarView(
                 store: store,
+                zoomScale: $zoomScale,
                 onSave: saveAnnotatedImage,
                 onScreenshot: { WindowManager.shared.startScreenshot() },
                 onCopy: copyToClipboard
@@ -37,7 +39,10 @@ struct AnnotationWindowContent: View {
                             store: store,
                             showTextInput: $showTextInput,
                             textInputPosition: $textInputPosition,
-                            canvasSize: $canvasSize
+                            canvasSize: $canvasSize,
+                            selectedKind: $selectedKind,
+                            selectedIndex: $selectedIndex,
+                            zoomScale: $zoomScale
                         )
                     } else {
                         DropZoneView(store: store)
@@ -78,8 +83,26 @@ struct AnnotationWindowContent: View {
             Button("") { saveAnnotatedImage() }.keyboardShortcut("s", modifiers: .command)
             Button("") { copyToClipboard() }.keyboardShortcut("c", modifiers: .command)
             Button("") { pasteFromClipboard() }.keyboardShortcut("v", modifiers: .command)
+            // Delete selected annotation
+            Button("") { deleteSelectedAnnotation() }.keyboardShortcut(.delete, modifiers: [])
+            // Zoom
+            Button("") { zoomScale = min(4.0, zoomScale + 0.25) }.keyboardShortcut("+", modifiers: .command)
+            Button("") { zoomScale = min(4.0, zoomScale + 0.25) }.keyboardShortcut("=", modifiers: .command)
+            Button("") { zoomScale = max(0.25, zoomScale - 0.25) }.keyboardShortcut("-", modifiers: .command)
+            Button("") { zoomScale = 1.0 }.keyboardShortcut("0", modifiers: .command)
         }
         .hidden()
+    }
+
+    // MARK: - Delete Selected
+
+    private func deleteSelectedAnnotation() {
+        guard store.currentTool == .select,
+              let kind = selectedKind,
+              selectedIndex >= 0 else { return }
+        store.deleteAnnotation(kind: kind, index: selectedIndex)
+        selectedKind = nil
+        selectedIndex = -1
     }
 
     // MARK: - Paste from Clipboard

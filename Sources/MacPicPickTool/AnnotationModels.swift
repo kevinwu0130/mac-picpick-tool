@@ -18,6 +18,7 @@ struct RectAnnotation: Identifiable {
     let rect: CGRect
     let color: Color
     let lineWidth: CGFloat
+    let filled: Bool
 }
 
 struct TextAnnotation: Identifiable {
@@ -56,6 +57,7 @@ struct EllipseAnnotation: Identifiable {
     let rect: CGRect
     let color: Color
     let lineWidth: CGFloat
+    let filled: Bool
 }
 
 struct MosaicAnnotation: Identifiable {

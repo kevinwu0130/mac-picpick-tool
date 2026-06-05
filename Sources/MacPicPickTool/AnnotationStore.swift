@@ -19,6 +19,7 @@ class AnnotationStore: ObservableObject {
     @Published var currentColor: Color = .red
     @Published var currentLineWidth: CGFloat = 2
     @Published var currentFontSize: CGFloat = 16
+    @Published var isFilled: Bool = false
 
     private var history: [AnnotationKind] = []
 
@@ -45,7 +46,7 @@ class AnnotationStore: ObservableObject {
     // MARK: - Adding Annotations
 
     func addRectangle(_ rect: CGRect) {
-        rectangles.append(RectAnnotation(rect: rect, color: currentColor, lineWidth: currentLineWidth))
+        rectangles.append(RectAnnotation(rect: rect, color: currentColor, lineWidth: currentLineWidth, filled: isFilled))
         history.append(.rectangle)
     }
 
@@ -71,7 +72,7 @@ class AnnotationStore: ObservableObject {
     }
 
     func addEllipse(_ rect: CGRect) {
-        ellipses.append(EllipseAnnotation(rect: rect, color: currentColor, lineWidth: currentLineWidth))
+        ellipses.append(EllipseAnnotation(rect: rect, color: currentColor, lineWidth: currentLineWidth, filled: isFilled))
         history.append(.ellipse)
     }
 
@@ -109,11 +110,11 @@ class AnnotationStore: ObservableObject {
         case .rectangle:
             guard index < rectangles.count else { return }
             let o = rectangles[index]
-            rectangles[index] = RectAnnotation(rect: o.rect.offsetBy(dx: dx, dy: dy), color: o.color, lineWidth: o.lineWidth)
+            rectangles[index] = RectAnnotation(rect: o.rect.offsetBy(dx: dx, dy: dy), color: o.color, lineWidth: o.lineWidth, filled: o.filled)
         case .ellipse:
             guard index < ellipses.count else { return }
             let o = ellipses[index]
-            ellipses[index] = EllipseAnnotation(rect: o.rect.offsetBy(dx: dx, dy: dy), color: o.color, lineWidth: o.lineWidth)
+            ellipses[index] = EllipseAnnotation(rect: o.rect.offsetBy(dx: dx, dy: dy), color: o.color, lineWidth: o.lineWidth, filled: o.filled)
         case .highlight:
             guard index < highlights.count else { return }
             let o = highlights[index]
@@ -148,17 +149,33 @@ class AnnotationStore: ObservableObject {
     func undo() {
         guard let last = history.popLast() else { return }
         switch last {
-        case .rectangle:   rectangles.removeLast()
-        case .text:        textAnnotations.removeLast()
-        case .doodle:      doodles.removeLast()
-        case .mosaic:      mosaics.removeLast()
-        case .blur:        blurs.removeLast()
-        case .numberLabel: numberLabels.removeLast()
-        case .arrow:       arrows.removeLast()
-        case .highlight:   highlights.removeLast()
-        case .line:        lines.removeLast()
-        case .ellipse:     ellipses.removeLast()
+        case .rectangle:   if !rectangles.isEmpty   { rectangles.removeLast() }
+        case .text:        if !textAnnotations.isEmpty { textAnnotations.removeLast() }
+        case .doodle:      if !doodles.isEmpty      { doodles.removeLast() }
+        case .mosaic:      if !mosaics.isEmpty      { mosaics.removeLast() }
+        case .blur:        if !blurs.isEmpty        { blurs.removeLast() }
+        case .numberLabel: if !numberLabels.isEmpty { numberLabels.removeLast() }
+        case .arrow:       if !arrows.isEmpty       { arrows.removeLast() }
+        case .highlight:   if !highlights.isEmpty   { highlights.removeLast() }
+        case .line:        if !lines.isEmpty        { lines.removeLast() }
+        case .ellipse:     if !ellipses.isEmpty     { ellipses.removeLast() }
         }
+    }
+
+    func deleteAnnotation(kind: AnnotationKind, index: Int) {
+        switch kind {
+        case .rectangle:   guard index < rectangles.count   else { return }; rectangles.remove(at: index)
+        case .text:        guard index < textAnnotations.count else { return }; textAnnotations.remove(at: index)
+        case .doodle:      guard index < doodles.count      else { return }; doodles.remove(at: index)
+        case .mosaic:      guard index < mosaics.count      else { return }; mosaics.remove(at: index)
+        case .blur:        guard index < blurs.count        else { return }; blurs.remove(at: index)
+        case .numberLabel: guard index < numberLabels.count else { return }; numberLabels.remove(at: index)
+        case .arrow:       guard index < arrows.count       else { return }; arrows.remove(at: index)
+        case .highlight:   guard index < highlights.count   else { return }; highlights.remove(at: index)
+        case .line:        guard index < lines.count        else { return }; lines.remove(at: index)
+        case .ellipse:     guard index < ellipses.count     else { return }; ellipses.remove(at: index)
+        }
+        if let idx = history.lastIndex(of: kind) { history.remove(at: idx) }
     }
 
     func clearAnnotations() {
@@ -268,20 +285,30 @@ class AnnotationStore: ObservableObject {
 
         // 4. Ellipses
         for ellipse in ellipses {
+            let er = CGRect(x: ellipse.rect.minX * scaleX,
+                            y: imgSize.height - ellipse.rect.maxY * scaleY,
+                            width: ellipse.rect.width * scaleX,
+                            height: ellipse.rect.height * scaleY)
+            if ellipse.filled {
+                ctx.setFillColor(NSColor(ellipse.color).withAlphaComponent(0.25).cgColor)
+                ctx.fillEllipse(in: er)
+            }
             ctx.setStrokeColor(NSColor(ellipse.color).cgColor)
             ctx.setLineWidth(ellipse.lineWidth * lineScale)
-            ctx.strokeEllipse(in: CGRect(x: ellipse.rect.minX * scaleX,
-                                         y: imgSize.height - ellipse.rect.maxY * scaleY,
-                                         width: ellipse.rect.width * scaleX,
-                                         height: ellipse.rect.height * scaleY))
+            ctx.strokeEllipse(in: er)
         }
 
         // 5. Rectangles
         for rect in rectangles {
+            let rr = CGRect(x: rect.rect.minX * scaleX, y: imgSize.height - rect.rect.maxY * scaleY,
+                            width: rect.rect.width * scaleX, height: rect.rect.height * scaleY)
+            if rect.filled {
+                ctx.setFillColor(NSColor(rect.color).withAlphaComponent(0.25).cgColor)
+                ctx.fill(rr)
+            }
             ctx.setStrokeColor(NSColor(rect.color).cgColor)
             ctx.setLineWidth(rect.lineWidth * lineScale)
-            ctx.stroke(CGRect(x: rect.rect.minX * scaleX, y: imgSize.height - rect.rect.maxY * scaleY,
-                              width: rect.rect.width * scaleX, height: rect.rect.height * scaleY))
+            ctx.stroke(rr)
         }
 
         // 6. Lines
