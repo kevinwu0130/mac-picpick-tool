@@ -15,6 +15,7 @@ struct ToolbarView: View {
 
             Divider().frame(height: 22)
 
+            // Tool buttons — each shows icon + label + shortcut key badge
             ForEach(AnnotationTool.allCases, id: \.self) { tool in
                 toolButton(for: tool)
             }
@@ -25,7 +26,7 @@ struct ToolbarView: View {
                 Label("復原", systemImage: "arrow.uturn.backward")
             }
             .disabled(!store.hasAnnotations)
-            .help("復原最後一個標註")
+            .help("復原最後一個標註 (⌘Z)")
 
             Button { store.clearAnnotations() } label: {
                 Image(systemName: "trash")
@@ -40,7 +41,7 @@ struct ToolbarView: View {
                     Label("儲存圖片", systemImage: "square.and.arrow.down")
                 }
                 .buttonStyle(.borderedProminent)
-                .help("將標註後的圖片儲存為 PNG")
+                .help("將標註後的圖片儲存為 PNG (⌘S)")
             }
         }
         .padding(.horizontal, 12)
@@ -51,15 +52,29 @@ struct ToolbarView: View {
     private func toolButton(for tool: AnnotationTool) -> some View {
         let selected = store.currentTool == tool
         Button { store.currentTool = tool } label: {
-            Label(tool.label, systemImage: tool.systemImage)
+            VStack(spacing: 2) {
+                Image(systemName: tool.systemImage)
+                    .font(.system(size: 15))
+                HStack(spacing: 3) {
+                    Text(tool.label)
+                        .font(.caption2)
+                    Text("[\(tool.shortcutKey)]")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .frame(minWidth: 64)
+            .padding(.vertical, 4)
+            .padding(.horizontal, 6)
         }
+        .buttonStyle(.plain)
         .background(selected ? Color.accentColor.opacity(0.15) : Color.clear)
         .cornerRadius(5)
         .overlay(
             RoundedRectangle(cornerRadius: 5)
                 .stroke(selected ? Color.accentColor : Color.clear, lineWidth: 1)
         )
-        .help(tool.label)
+        .help("\(tool.label) — 按 \(tool.shortcutKey) 切換")
     }
 
     private func openImageFile() {

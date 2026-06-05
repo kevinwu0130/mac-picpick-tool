@@ -27,6 +27,8 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        // Hidden buttons register keyboard shortcuts throughout the window
+        .background(keyboardShortcuts)
         .sheet(isPresented: $showTextInput) {
             TextInputSheet(text: $textInput) { confirmed in
                 let trimmed = textInput.trimmingCharacters(in: .whitespaces)
@@ -38,6 +40,22 @@ struct ContentView: View {
             }
         }
     }
+
+    // MARK: - Keyboard Shortcuts
+
+    private var keyboardShortcuts: some View {
+        Group {
+            Button("") { store.currentTool = .rectangle }.keyboardShortcut("r", modifiers: [])
+            Button("") { store.currentTool = .text }.keyboardShortcut("t", modifiers: [])
+            Button("") { store.currentTool = .doodle }.keyboardShortcut("p", modifiers: [])
+            Button("") { store.currentTool = .mosaic }.keyboardShortcut("m", modifiers: [])
+            Button("") { store.undo() }.keyboardShortcut("z", modifiers: .command)
+            Button("") { saveAnnotatedImage() }.keyboardShortcut("s", modifiers: .command)
+        }
+        .hidden()
+    }
+
+    // MARK: - Export
 
     private func saveAnnotatedImage() {
         guard let exported = store.exportAnnotatedImage(canvasSize: canvasSize) else { return }
