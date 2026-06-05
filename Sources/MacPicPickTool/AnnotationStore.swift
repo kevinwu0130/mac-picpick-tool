@@ -23,6 +23,11 @@ class AnnotationStore: ObservableObject {
         clearAnnotations()
     }
 
+    func loadImage(nsImage: NSImage) {
+        selectedImage = nsImage
+        clearAnnotations()
+    }
+
     // MARK: - Adding Annotations
 
     func addRectangle(_ rect: CGRect) {

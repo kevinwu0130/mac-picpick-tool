@@ -5,9 +5,15 @@ import UniformTypeIdentifiers
 struct ToolbarView: View {
     @ObservedObject var store: AnnotationStore
     let onSave: () -> Void
+    let onScreenshot: () -> Void
 
     var body: some View {
         HStack(spacing: 6) {
+            Button { onScreenshot() } label: {
+                Label("截圖", systemImage: "camera.viewfinder")
+            }
+            .help("螢幕截圖並載入（需要螢幕錄製權限）")
+
             Button { openImageFile() } label: {
                 Label("開啟圖片", systemImage: "photo")
             }

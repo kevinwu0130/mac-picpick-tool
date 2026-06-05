@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import CoreGraphics
 import UniformTypeIdentifiers
 
 struct ContentView: View {
@@ -9,9 +10,12 @@ struct ContentView: View {
     @State private var textInput = ""
     @State private var canvasSize: CGSize = .zero
 
+    // Keeps the overlay window alive while it's on screen
+    @State private var screenshotOverlay: ScreenshotOverlayWindow?
+
     var body: some View {
         VStack(spacing: 0) {
-            ToolbarView(store: store, onSave: saveAnnotatedImage)
+            ToolbarView(store: store, onSave: saveAnnotatedImage, onScreenshot: startScreenshot)
             Divider()
             Group {
                 if store.selectedImage != nil {
@@ -27,7 +31,6 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        // Hidden buttons register keyboard shortcuts throughout the window
         .background(keyboardShortcuts)
         .sheet(isPresented: $showTextInput) {
             TextInputSheet(text: $textInput) { confirmed in
@@ -38,6 +41,54 @@ struct ContentView: View {
                 textInput = ""
                 showTextInput = false
             }
+        }
+    }
+
+    // MARK: - Screenshot
+
+    private func startScreenshot() {
+        // Request / verify Screen Recording permission
+        guard CGPreflightScreenCaptureAccess() else {
+            CGRequestScreenCaptureAccess()
+            showPermissionAlert()
+            return
+        }
+
+        // Capture a reference to our window before hiding it
+        let appWindow = NSApp.keyWindow ?? NSApp.mainWindow
+        appWindow?.orderOut(nil)
+
+        // Let the window disappear before the overlay appears
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            let overlay = ScreenshotOverlayWindow()
+            screenshotOverlay = overlay
+            overlay.start(
+                onCapture: { image in
+                    screenshotOverlay = nil
+                    appWindow?.makeKeyAndOrderFront(nil)
+                    store.loadImage(nsImage: image)
+                },
+                onCancel: {
+                    screenshotOverlay = nil
+                    appWindow?.makeKeyAndOrderFront(nil)
+                }
+            )
+        }
+    }
+
+    private func showPermissionAlert() {
+        let alert = NSAlert()
+        alert.messageText = "需要「螢幕錄製」權限"
+        alert.informativeText = """
+            請前往「系統設定 → 隱私權與安全性 → 螢幕錄製」，\
+            勾選 MacPicPickTool，然後重新啟動 App。
+            """
+        alert.addButton(withTitle: "開啟系統設定")
+        alert.addButton(withTitle: "取消")
+        if alert.runModal() == .alertFirstButtonReturn {
+            NSWorkspace.shared.open(
+                URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!
+            )
         }
     }
 
