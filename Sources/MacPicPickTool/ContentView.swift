@@ -60,7 +60,10 @@ struct ContentView: View {
 
         // Let the window disappear before the overlay appears
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-            let overlay = ScreenshotOverlayWindow()
+            guard let overlay = ScreenshotOverlayWindow.makeForMainScreen() else {
+                appWindow?.makeKeyAndOrderFront(nil)
+                return
+            }
             screenshotOverlay = overlay
             overlay.start(
                 onCapture: { image in

@@ -4,22 +4,39 @@ import CoreGraphics
 // MARK: - Overlay Window
 
 /// Full-screen borderless window that dims the display and lets the user
-/// drag a selection rectangle. On mouse-up the selected region is captured
-/// via CGWindowListCreateImage and returned through the onCapture callback.
+/// drag a selection rectangle. On mouse-up the region is captured via
+/// CGWindowListCreateImage and returned through the onCapture callback.
 final class ScreenshotOverlayWindow: NSWindow {
     private let selectionView: SelectionOverlayView
 
-    init() {
-        let screen = NSScreen.main ?? NSScreen.screens[0]
+    // MARK: Factory
+
+    /// Returns nil if no main screen is available (safe unwrap).
+    static func makeForMainScreen() -> ScreenshotOverlayWindow? {
+        // NSScreen.screens.first avoids the crash that NSScreen.screens[0] causes
+        // when the array is empty (e.g. during display reconfiguration).
+        guard let screen = NSScreen.main ?? NSScreen.screens.first else { return nil }
+        return ScreenshotOverlayWindow(screen: screen)
+    }
+
+    // MARK: Init
+
+    private init(screen: NSScreen) {
         selectionView = SelectionOverlayView(frame: screen.frame)
 
+        // Use the 4-parameter DESIGNATED initializer of NSWindow.
+        // The 5-parameter version (with screen:) is a convenience init — calling it
+        // from a subclass designated init breaks Swift's initializer chain and causes
+        // EXC_BREAKPOINT / SIGTRAP at runtime.
         super.init(
             contentRect: screen.frame,
             styleMask: .borderless,
             backing: .buffered,
-            defer: false,
-            screen: screen
+            defer: false
         )
+
+        // Prevent NSWindow from auto-releasing itself when ordered out
+        isReleasedWhenClosed = false
 
         level = .screenSaver
         backgroundColor = .clear
@@ -30,11 +47,19 @@ final class ScreenshotOverlayWindow: NSWindow {
         contentView = selectionView
     }
 
+    /// NSWindow subclasses must implement this; we never decode from a xib/nib.
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("ScreenshotOverlayWindow does not support init(coder:)")
+    }
+
+    // MARK: Public API
+
     func start(onCapture: @escaping (NSImage) -> Void, onCancel: @escaping () -> Void) {
         selectionView.onCapture = { [weak self] rect in
             self?.orderOut(nil)
-            // Brief delay so the overlay fully disappears before we capture
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            // Wait for the overlay to fully disappear before capturing
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                 let cgImage = CGWindowListCreateImage(
                     rect,
                     .optionOnScreenOnly,
@@ -42,7 +67,7 @@ final class ScreenshotOverlayWindow: NSWindow {
                     .bestResolution
                 )
                 if let cgImage {
-                    // Use rect.size (points) so NSImage handles Retina scaling correctly
+                    // rect.size is in points; NSImage handles Retina pixel density
                     onCapture(NSImage(cgImage: cgImage, size: rect.size))
                 } else {
                     onCancel()
@@ -70,15 +95,14 @@ final class SelectionOverlayView: NSView {
     private var currentPoint: NSPoint = .zero
     private var isSelecting = false
 
-    // isFlipped = true  →  (0,0) at top-left, matching CGWindowListCreateImage's Quartz space.
-    // Mouse coordinates converted via convert(_:from:nil) are therefore already in Quartz space.
+    // isFlipped = true → (0,0) at top-left of the view, which maps 1:1 to
+    // CGWindowListCreateImage's Quartz coordinate origin (top-left of primary display).
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
 
     // MARK: Drawing
 
     override func draw(_ dirtyRect: NSRect) {
-        // 1. Full-screen dim
         NSColor.black.withAlphaComponent(0.42).setFill()
         bounds.fill()
 
@@ -90,20 +114,17 @@ final class SelectionOverlayView: NSView {
         let sel = selectionRect
         guard sel.width > 0, sel.height > 0 else { return }
 
-        // 2. Punch a transparent hole so the real screen content shows through
+        // Punch a transparent hole so real screen content shows through
         NSGraphicsContext.current?.cgContext.clear(sel)
 
-        // 3. Dashed white border
+        // Dashed white border
         NSColor.white.setStroke()
         let path = NSBezierPath(rect: sel.insetBy(dx: 0.75, dy: 0.75))
         path.lineWidth = 1.5
         path.setLineDash([5, 3], count: 2, phase: 0)
         path.stroke()
 
-        // 4. Corner handles
         drawHandles(for: sel)
-
-        // 5. Size label
         drawSizeLabel(for: sel)
     }
 
@@ -122,17 +143,15 @@ final class SelectionOverlayView: NSView {
     }
 
     private func drawHandles(for rect: NSRect) {
-        let size: CGFloat = 6
-        let corners: [NSPoint] = [
+        let sz: CGFloat = 6
+        NSColor.white.setFill()
+        for corner in [
             NSPoint(x: rect.minX, y: rect.minY),
             NSPoint(x: rect.maxX, y: rect.minY),
             NSPoint(x: rect.minX, y: rect.maxY),
             NSPoint(x: rect.maxX, y: rect.maxY)
-        ]
-        NSColor.white.setFill()
-        for corner in corners {
-            NSRect(x: corner.x - size / 2, y: corner.y - size / 2,
-                   width: size, height: size).fill()
+        ] {
+            NSRect(x: corner.x - sz / 2, y: corner.y - sz / 2, width: sz, height: sz).fill()
         }
     }
 
