@@ -97,6 +97,7 @@ final class WindowManager {
         let rep = NSBitmapImageRep(cgImage: cg)
         if let data = rep.representation(using: .png, properties: [:]) {
             try? data.write(to: url)
+            NotificationCenter.default.post(name: .newScreenshotSaved, object: nil)
         }
     }
 

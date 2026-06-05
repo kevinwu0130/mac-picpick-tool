@@ -22,6 +22,11 @@ struct ToolbarView: View {
                 }
                 .help("開啟圖片")
 
+                Button { openSaveFolder() } label: {
+                    Label("截圖資料夾", systemImage: "folder")
+                }
+                .help("在 Finder 中開啟截圖資料夾")
+
                 Divider().frame(height: 20)
 
                 ColorPicker("", selection: $store.currentColor)
@@ -118,6 +123,13 @@ struct ToolbarView: View {
                 .stroke(selected ? Color.accentColor : Color.clear, lineWidth: 1)
         )
         .help("\(tool.label) — 按 \(tool.shortcutKey) 切換")
+    }
+
+    private func openSaveFolder() {
+        let dir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Pictures/MacPicPickTool")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(dir)
     }
 
     private func openImageFile() {

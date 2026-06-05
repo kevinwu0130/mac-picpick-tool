@@ -28,19 +28,23 @@ struct AnnotationWindowContent: View {
                 onCopy: copyToClipboard
             )
             Divider()
-            Group {
-                if store.selectedImage != nil {
-                    AnnotationCanvas(
-                        store: store,
-                        showTextInput: $showTextInput,
-                        textInputPosition: $textInputPosition,
-                        canvasSize: $canvasSize
-                    )
-                } else {
-                    DropZoneView(store: store)
+            HStack(spacing: 0) {
+                HistorySidebarView(store: store)
+                Divider()
+                Group {
+                    if store.selectedImage != nil {
+                        AnnotationCanvas(
+                            store: store,
+                            showTextInput: $showTextInput,
+                            textInputPosition: $textInputPosition,
+                            canvasSize: $canvasSize
+                        )
+                    } else {
+                        DropZoneView(store: store)
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(keyboardShortcuts)
         .sheet(isPresented: $showTextInput) {
