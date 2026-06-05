@@ -57,6 +57,10 @@ struct ToolbarView: View {
     @ViewBuilder
     private func toolButton(for tool: AnnotationTool) -> some View {
         let selected = store.currentTool == tool
+        // Number label shows the next sequence number instead of the static shortcut key
+        let badge: String = tool == .numberLabel
+            ? "[\(store.nextLabelNumber)]"
+            : "[\(tool.shortcutKey)]"
         Button { store.currentTool = tool } label: {
             VStack(spacing: 2) {
                 Image(systemName: tool.systemImage)
@@ -64,7 +68,7 @@ struct ToolbarView: View {
                 HStack(spacing: 3) {
                     Text(tool.label)
                         .font(.caption2)
-                    Text("[\(tool.shortcutKey)]")
+                    Text(badge)
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }

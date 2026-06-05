@@ -7,7 +7,7 @@ struct AnnotationCanvas: View {
     @Binding var textInputPosition: CGPoint
     @Binding var canvasSize: CGSize
 
-    // Shared drag state (used by rectangle and mosaic tools)
+    // Shared drag state (used by rectangle, mosaic, and blur tools)
     @State private var dragStart: CGPoint = .zero
     @State private var dragCurrent: CGPoint = .zero
     @State private var isDrawingRect = false
@@ -73,6 +73,11 @@ struct AnnotationCanvas: View {
             context.draw(Image(nsImage: mosaic.tile), in: mosaic.rect)
         }
 
+        // Committed blurs — draw the precomputed Gaussian-blurred tile
+        for blur in store.blurs {
+            context.draw(Image(nsImage: blur.tile), in: blur.rect)
+        }
+
         // Committed text annotations
         for annotation in store.textAnnotations {
             context.draw(
@@ -81,18 +86,40 @@ struct AnnotationCanvas: View {
             )
         }
 
-        // Live preview: rectangle or mosaic drag
+        // Committed number labels — red circle with white number
+        for label in store.numberLabels {
+            let diameter: CGFloat = 26
+            let circleRect = CGRect(
+                x: label.position.x - diameter / 2,
+                y: label.position.y - diameter / 2,
+                width: diameter,
+                height: diameter
+            )
+            context.fill(Path(ellipseIn: circleRect), with: .color(.red))
+            context.draw(
+                Text("\(label.number)").font(.system(size: 14, weight: .bold)).foregroundColor(.white),
+                at: label.position
+            )
+        }
+
+        // Live preview: rectangle, mosaic, or blur drag
         if isDrawingRect {
             let preview = normalizedRect(from: dragStart, to: dragCurrent)
             let path = Path(preview)
-            if store.currentTool == .rectangle {
+            switch store.currentTool {
+            case .rectangle:
                 context.fill(path, with: .color(.red.opacity(0.1)))
                 context.stroke(path, with: .color(.red), lineWidth: 2)
-            } else {
-                // Mosaic preview: dashed gray box
+            case .mosaic:
                 context.fill(path, with: .color(.gray.opacity(0.3)))
                 context.stroke(path, with: .color(.gray),
                                style: StrokeStyle(lineWidth: 2, dash: [6, 3]))
+            case .blur:
+                context.fill(path, with: .color(.blue.opacity(0.15)))
+                context.stroke(path, with: .color(.blue),
+                               style: StrokeStyle(lineWidth: 2, dash: [6, 3]))
+            default:
+                break
             }
         }
 
@@ -113,7 +140,7 @@ struct AnnotationCanvas: View {
             .onChanged { value in
                 let d = hypot(value.translation.width, value.translation.height)
                 switch store.currentTool {
-                case .rectangle, .mosaic:
+                case .rectangle, .mosaic, .blur:
                     if d > 3 {
                         dragStart = value.startLocation
                         dragCurrent = value.location
@@ -124,7 +151,7 @@ struct AnnotationCanvas: View {
                         currentStroke.append(value.startLocation)
                     }
                     currentStroke.append(value.location)
-                case .text:
+                case .text, .numberLabel:
                     break
                 }
             }
@@ -146,6 +173,15 @@ struct AnnotationCanvas: View {
                     }
                     isDrawingRect = false
 
+                case .blur:
+                    if d > 5 {
+                        store.addBlur(
+                            rect: normalizedRect(from: value.startLocation, to: value.location),
+                            canvasSize: canvasSize
+                        )
+                    }
+                    isDrawingRect = false
+
                 case .doodle:
                     store.addDoodle(points: currentStroke)
                     currentStroke = []
@@ -154,6 +190,11 @@ struct AnnotationCanvas: View {
                     if d < 5 {
                         textInputPosition = value.startLocation
                         showTextInput = true
+                    }
+
+                case .numberLabel:
+                    if d < 5 {
+                        store.addNumberLabel(at: value.startLocation)
                     }
                 }
             }
@@ -173,7 +214,7 @@ struct AnnotationCanvas: View {
     private func updateCursor(active: Bool) {
         if active {
             switch store.currentTool {
-            case .rectangle, .doodle, .mosaic: NSCursor.crosshair.set()
+            case .rectangle, .doodle, .mosaic, .blur, .numberLabel: NSCursor.crosshair.set()
             case .text: NSCursor.iBeam.set()
             }
         } else {

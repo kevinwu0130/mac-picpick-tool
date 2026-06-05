@@ -103,6 +103,8 @@ struct ContentView: View {
             Button("") { store.currentTool = .text }.keyboardShortcut("t", modifiers: [])
             Button("") { store.currentTool = .doodle }.keyboardShortcut("p", modifiers: [])
             Button("") { store.currentTool = .mosaic }.keyboardShortcut("m", modifiers: [])
+            Button("") { store.currentTool = .blur }.keyboardShortcut("b", modifiers: [])
+            Button("") { store.currentTool = .numberLabel }.keyboardShortcut("n", modifiers: [])
             Button("") { store.undo() }.keyboardShortcut("z", modifiers: .command)
             Button("") { saveAnnotatedImage() }.keyboardShortcut("s", modifiers: .command)
         }
