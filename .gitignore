@@ -6,3 +6,10 @@ xcuserdata/
 *.xcworkspace
 DerivedData/
 .swiftpm/
+
+# Claude Code settings (may contain secrets)
+.claude/
+.mcp.json
+
+# Built app bundle
+MacPicPickTool.app/
