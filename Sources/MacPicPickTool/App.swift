@@ -2,13 +2,11 @@ import SwiftUI
 
 @main
 struct MacPicPickToolApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+
     var body: some Scene {
-        WindowGroup {
-            ContentView()
-                .frame(minWidth: 900, minHeight: 640)
-        }
-        .commands {
-            CommandGroup(replacing: .newItem) {}
-        }
+        // Window lifecycle is managed by WindowManager + AppDelegate.
+        // Settings is a required placeholder — SwiftUI needs at least one Scene.
+        Settings { EmptyView() }
     }
 }

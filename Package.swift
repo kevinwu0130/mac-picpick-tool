@@ -7,7 +7,10 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "MacPicPickTool",
-            path: "Sources/MacPicPickTool"
+            path: "Sources/MacPicPickTool",
+            linkerSettings: [
+                .linkedFramework("Carbon")
+            ]
         )
     ]
 )

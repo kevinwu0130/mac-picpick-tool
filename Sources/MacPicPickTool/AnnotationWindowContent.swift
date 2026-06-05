@@ -1,21 +1,31 @@
 import SwiftUI
 import AppKit
-import CoreGraphics
 import UniformTypeIdentifiers
 
-struct ContentView: View {
-    @StateObject private var store = AnnotationStore()
+/// The view hierarchy for a single annotation window.
+/// Each window gets its own independent AnnotationStore via @StateObject.
+struct AnnotationWindowContent: View {
+    @StateObject private var store: AnnotationStore
     @State private var showTextInput = false
     @State private var textInputPosition: CGPoint = .zero
     @State private var textInput = ""
     @State private var canvasSize: CGSize = .zero
 
-    // Keeps the overlay window alive while it's on screen
-    @State private var screenshotOverlay: ScreenshotOverlayWindow?
+    init(initialImage: NSImage? = nil) {
+        let s = AnnotationStore()
+        if let image = initialImage {
+            s.loadImage(nsImage: image)
+        }
+        _store = StateObject(wrappedValue: s)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            ToolbarView(store: store, onSave: saveAnnotatedImage, onScreenshot: startScreenshot)
+            ToolbarView(
+                store: store,
+                onSave: saveAnnotatedImage,
+                onScreenshot: { WindowManager.shared.startScreenshot() }
+            )
             Divider()
             Group {
                 if store.selectedImage != nil {
@@ -44,57 +54,6 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Screenshot
-
-    private func startScreenshot() {
-        // Request / verify Screen Recording permission
-        guard CGPreflightScreenCaptureAccess() else {
-            CGRequestScreenCaptureAccess()
-            showPermissionAlert()
-            return
-        }
-
-        // Capture a reference to our window before hiding it
-        let appWindow = NSApp.keyWindow ?? NSApp.mainWindow
-        appWindow?.orderOut(nil)
-
-        // Let the window disappear before the overlay appears
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-            guard let overlay = ScreenshotOverlayWindow.makeForMainScreen() else {
-                appWindow?.makeKeyAndOrderFront(nil)
-                return
-            }
-            screenshotOverlay = overlay
-            overlay.start(
-                onCapture: { image in
-                    screenshotOverlay = nil
-                    appWindow?.makeKeyAndOrderFront(nil)
-                    store.loadImage(nsImage: image)
-                },
-                onCancel: {
-                    screenshotOverlay = nil
-                    appWindow?.makeKeyAndOrderFront(nil)
-                }
-            )
-        }
-    }
-
-    private func showPermissionAlert() {
-        let alert = NSAlert()
-        alert.messageText = "需要「螢幕錄製」權限"
-        alert.informativeText = """
-            請前往「系統設定 → 隱私權與安全性 → 螢幕錄製」，\
-            勾選 MacPicPickTool，然後重新啟動 App。
-            """
-        alert.addButton(withTitle: "開啟系統設定")
-        alert.addButton(withTitle: "取消")
-        if alert.runModal() == .alertFirstButtonReturn {
-            NSWorkspace.shared.open(
-                URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!
-            )
-        }
-    }
-
     // MARK: - Keyboard Shortcuts
 
     private var keyboardShortcuts: some View {
@@ -115,13 +74,11 @@ struct ContentView: View {
 
     private func saveAnnotatedImage() {
         guard let exported = store.exportAnnotatedImage(canvasSize: canvasSize) else { return }
-
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png]
         panel.nameFieldStringValue = "annotated.png"
         panel.canCreateDirectories = true
         panel.message = "儲存標註後的圖片"
-
         guard panel.runModal() == .OK, let url = panel.url else { return }
         guard let cgImg = exported.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
         let rep = NSBitmapImageRep(cgImage: cgImg)
